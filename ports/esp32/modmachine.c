@@ -32,6 +32,11 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_bt.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+
+
 #if MICROPY_ESP_IDF_4
 #include "esp32/rom/rtc.h"
 #include "esp32/clk.h"
@@ -56,6 +61,10 @@
 #include "machine_rtc.h"
 
 #if MICROPY_PY_MACHINE
+
+
+
+extern uint16_t rom_phy_get_vdd33();
 
 typedef enum {
     MP_PWRON_RESET = 1,
@@ -226,6 +235,51 @@ STATIC mp_obj_t machine_enable_irq(mp_obj_t state_in) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(machine_enable_irq_obj, machine_enable_irq);
 
+STATIC mp_obj_t mod_machine_vdd33() {
+    uint16_t val;	
+   
+    // Initialize NVS.
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( ret );
+
+    // ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
+
+    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    ret = esp_bt_controller_init(&bt_cfg);
+    if (ret) {
+        // ESP_LOGE(GATTC_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
+        return mp_obj_new_int(-1);
+    }
+
+    ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    if (ret) {
+        // ESP_LOGE(GATTC_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
+        return mp_obj_new_int(-1);
+    }
+
+
+    val = rom_phy_get_vdd33();
+
+
+    ret = esp_bt_controller_disable();
+    if (ret != ESP_OK) {
+        return mp_obj_new_int(ret);
+    }
+
+    ret = esp_bt_controller_deinit();
+    if (ret != ESP_OK) {
+        return mp_obj_new_int(ret);
+    }
+
+
+    return mp_obj_new_int(val);
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mod_machine_vdd33_obj, mod_machine_vdd33);
+
 STATIC const mp_rom_map_elem_t machine_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_umachine) },
 
@@ -246,6 +300,8 @@ STATIC const mp_rom_map_elem_t machine_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_enable_irq), MP_ROM_PTR(&machine_enable_irq_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_time_pulse_us), MP_ROM_PTR(&machine_time_pulse_us_obj) },
+
+    { MP_ROM_QSTR(MP_QSTR_internal_vdd),            MP_ROM_PTR(&mod_machine_vdd33_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_Timer), MP_ROM_PTR(&machine_timer_type) },
     { MP_ROM_QSTR(MP_QSTR_WDT), MP_ROM_PTR(&machine_wdt_type) },
